@@ -77,15 +77,18 @@ async def check_task_status(context: ContextTypes.DEFAULT_TYPE):
 
     if status == "done":
         await context.bot.send_message(chat_id, f"Готово:\n{row['result']}")
+        supabase.table("agent_tasks").delete().eq("id", task_id).execute()
         job.schedule_removal()
     elif status == "error":
         await context.bot.send_message(chat_id, f"Ошибка при выполнении:\n{row['result']}")
+        supabase.table("agent_tasks").delete().eq("id", task_id).execute()
         job.schedule_removal()
     elif job.data["checks"] >= MAX_WAIT_CHECKS:
         await context.bot.send_message(
             chat_id,
             "Агент на компьютере не отвечает слишком долго. Проверь, запущен ли local_agent.py.",
         )
+        supabase.table("agent_tasks").delete().eq("id", task_id).execute()
         job.schedule_removal()
 
 
