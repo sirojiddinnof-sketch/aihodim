@@ -33,9 +33,9 @@ MAX_WAIT_CHECKS = 60  # при интервале 5 сек = 5 минут мак
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Напиши мне задачу обычным языком, например:\n"
+        "Привет! Со мной можно и просто поговорить, и дать задачу для компьютера, например:\n"
         "\"открой папку Новая папка на рабочем столе, найди Rhino 7 и перемести на рабочий стол\"\n\n"
-        "Я передам задачу локальному агенту на твоём компьютере."
+        "Пиши что угодно."
     )
 
 
@@ -50,7 +50,7 @@ async def handle_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     task_id = insert_resp.data[0]["id"]
 
-    await update.message.reply_text("Принял, отправляю агенту на выполнение...")
+    await update.message.reply_text("...")
 
     context.job_queue.run_repeating(
         check_task_status,
@@ -76,7 +76,7 @@ async def check_task_status(context: ContextTypes.DEFAULT_TYPE):
     status = row["status"]
 
     if status == "done":
-        await context.bot.send_message(chat_id, f"Готово:\n{row['result']}")
+        await context.bot.send_message(chat_id, row["result"])
         supabase.table("agent_tasks").delete().eq("id", task_id).execute()
         job.schedule_removal()
     elif status == "error":
