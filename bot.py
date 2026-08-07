@@ -15,6 +15,7 @@ requirements.txt:
 import os
 import logging
 import mimetypes
+import uuid
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from supabase import create_client
@@ -47,54 +48,64 @@ async def handle_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_text = update.message.text
     chat_id = update.effective_chat.id
 
-    insert_resp = (
-        supabase.table("agent_tasks")
-        .insert({"chat_id": chat_id, "task_text": task_text, "status": "pending"})
-        .execute()
-    )
-    task_id = insert_resp.data[0]["id"]
+    try:
+        insert_resp = (
+            supabase.table("agent_tasks")
+            .insert({"chat_id": chat_id, "task_text": task_text, "status": "pending"})
+            .execute()
+        )
+        task_id = insert_resp.data[0]["id"]
 
-    await update.message.reply_text("...")
+        await update.message.reply_text("...")
 
-    context.job_queue.run_repeating(
-        check_task_status,
-        interval=5,
-        first=5,
-        data={"task_id": task_id, "chat_id": chat_id, "checks": 0},
-        name=f"task_{task_id}",
-    )
+        context.job_queue.run_repeating(
+            check_task_status,
+            interval=5,
+            first=5,
+            data={"task_id": task_id, "chat_id": chat_id, "checks": 0},
+            name=f"task_{task_id}",
+        )
+    except Exception as e:
+        logger.exception("Ошибка в handle_task")
+        await update.message.reply_text(f"Не получилось поставить задачу в очередь: {e}")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     task_text = update.message.caption or "Посмотри на присланное фото и опиши, что на нём"
 
-    photo = update.message.photo[-1]  # самое большое разрешение
-    tg_file = await context.bot.get_file(photo.file_id)
-    photo_bytes = await tg_file.download_as_bytearray()
+    try:
+        photo = update.message.photo[-1]  # самое большое разрешение
+        tg_file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await tg_file.download_as_bytearray()
 
-    file_name = f"{chat_id}_{photo.file_id}.jpg"
-    supabase.storage.from_(STORAGE_BUCKET).upload(
-        file_name, bytes(photo_bytes), {"content-type": "image/jpeg"}
-    )
-    image_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_name)
+        # уникальное имя на каждую загрузку — чтобы не конфликтовать с уже существующим файлом
+        file_name = f"{chat_id}_{uuid.uuid4().hex}.jpg"
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            file_name, bytes(photo_bytes), {"content-type": "image/jpeg"}
+        )
+        image_url = supabase.storage.from_(STORAGE_BUCKET).get_public_url(file_name)
 
-    insert_resp = (
-        supabase.table("agent_tasks")
-        .insert({"chat_id": chat_id, "task_text": task_text, "image_url": image_url, "status": "pending"})
-        .execute()
-    )
-    task_id = insert_resp.data[0]["id"]
+        insert_resp = (
+            supabase.table("agent_tasks")
+            .insert({"chat_id": chat_id, "task_text": task_text, "image_url": image_url, "status": "pending"})
+            .execute()
+        )
+        task_id = insert_resp.data[0]["id"]
 
-    await update.message.reply_text("...")
+        await update.message.reply_text("...")
 
-    context.job_queue.run_repeating(
-        check_task_status,
-        interval=5,
-        first=5,
-        data={"task_id": task_id, "chat_id": chat_id, "checks": 0},
-        name=f"task_{task_id}",
-    )
+        context.job_queue.run_repeating(
+            check_task_status,
+            interval=5,
+            first=5,
+            data={"task_id": task_id, "chat_id": chat_id, "checks": 0},
+            name=f"task_{task_id}",
+        )
+    except Exception as e:
+        logger.exception("Ошибка в handle_photo")
+        await update.message.reply_text(f"Не получилось обработать фото: {e}")
+
 
 
 async def check_task_status(context: ContextTypes.DEFAULT_TYPE):
